@@ -28,40 +28,50 @@ background-color:#111;
         </form>
     </div>
     <div id="outputDiv">
-        
+
     </div>
     <script>
         const fileForm = document.getElementById("fileForm");
         // We aren't allowed to reload the file automatically without user input
         // apparently, so reset the form to make that clearer.
         fileForm.reset();
-        
+
         const fileInput = document.getElementById("fileInput");
         const outputDiv = document.getElementById("outputDiv");
-        
+
         fileInput.addEventListener("change", () => {
             for (let i = 0; i < fileInput.files.length; i += 1) {
                 const file = fileInput.files[i];
-                
+
                 const reader = new FileReader();
 
                 reader.onload = (e) => {
                     // The content of the file as a text string
                     const fileContent = e.target.result + "\n"; // We add "\n" So we know we'll flush the last item
-                    
+
                     //
                     //  Parse The List
                     //
-                    
+
                     const STATE_INITIAL = 0;
                     const STATE_HEADER = 1;
-                    const STATE_LIST_ITEM = 2;
-                    
+                    const STATE_LIST_IDENT = 2;
+                    const STATE_LIST_ITEM = 3;
+                    const STATE_SUBLIST_IDENT = 4;
+                    const STATE_SUBLIST_ITEM = 5;
+
                     let state = STATE_INITIAL;
                     let tempHeader = "";
                     let tempListItem = "";
                     let headers = {};
-                    
+                    let currentListItem = {};
+                    let detectedIndentDepth = 0;
+                    let currentIndentDepth = 0;
+                    let currentSublistDepth = 0;
+
+                    const TAB_WIDTH = 4;
+                    const SPACE_WIDTH = 1;
+
                     for (const c of fileContent) {
                         switch (state) {
                             case STATE_INITIAL:
@@ -81,7 +91,7 @@ background-color:#111;
                                         tempHeader = tempHeader.trim()
 
                                         if (tempHeader) {
-                                            state = STATE_LIST_ITEM;
+                                            state = STATE_LIST_IDENT;
                                             // TODO? Bother to handle identical headers?
                                             headers[tempHeader] = [];
                                             tempListItem = "";
@@ -94,6 +104,39 @@ background-color:#111;
                                     default:
                                         tempHeader += c;
                                     break
+                                }
+                            break;
+                            case STATE_LIST_IDENT:
+                                switch (c) {
+                                    case "#":
+                                        state = STATE_HEADER;
+                                        if (tempListItem) {
+                                            headers[tempHeader].push(tempListItem);
+                                        }
+                                        tempHeader = "";
+                                    break;
+                                    case "\n":
+                                        tempListItem = tempListItem.trim()
+
+                                        if (tempListItem) {
+                                            // TODO handle sub items properly. Support infinite levels?
+                                            currentListItem = { name: tempListItem, subItems: []};
+                                            headers[tempHeader].push(currentListItem);
+                                        }
+                                        currentIndentDepth = 0;
+                                        tempListItem = "";
+                                    break;
+                                    case "\t":
+                                        currentIndentDepth += TAB_WIDTH - SPACE_WIDTH;
+                                         // fallthrough
+                                    case " ":
+                                        currentIndentDepth += SPACE_WIDTH;
+                                        state = STATE_SUBLIST_IDENT;
+                                    break;
+                                    default:
+                                        tempListItem += c;
+                                        state = STATE_LIST_ITEM;
+                                    break;
                                 }
                             break;
                             case STATE_LIST_ITEM:
@@ -110,8 +153,89 @@ background-color:#111;
 
                                         if (tempListItem) {
                                             // TODO handle sub items properly. Support infinite levels?
-                                            headers[tempHeader].push({ name: tempListItem, subItems: []});
+                                            currentListItem = { name: tempListItem, subItems: []};
+                                            headers[tempHeader].push(currentListItem);
                                         }
+                                        currentIndentDepth = 0;
+                                        tempListItem = "";
+                                        state = STATE_LIST_IDENT;
+                                    break;
+                                    default:
+                                        tempListItem += c;
+                                    break;
+                                }
+                            break;
+                            case STATE_SUBLIST_IDENT:
+                                switch (c) {
+                                    case "#":
+                                        state = STATE_HEADER;
+                                        if (tempListItem) {
+                                            headers[tempHeader].push(tempListItem);
+                                        }
+                                        tempHeader = "";
+                                    break;
+                                    case "\n":
+                                        state = STATE_LIST_ITEM;
+                                        currentIndentDepth = 0;
+                                        currentSublistDepth = 0;
+                                        tempListItem = "";
+                                    break;
+                                    case "\t":
+                                        currentIndentDepth += 3;
+                                         // fallthrough
+                                    case " ":
+                                        currentIndentDepth += 1;
+                                        state = STATE_SUBLIST_IDENT;
+                                    break;
+                                    default:
+                                        // Some word character to start the list item
+                                        if (!detectedIndentDepth) {
+                                            detectedIndentDepth = currentIndentDepth;
+                                        }
+
+                                        currentSublistDepth = Math.floor(currentIndentDepth / detectedIndentDepth)
+
+                                        state = STATE_SUBLIST_ITEM;
+                                        tempListItem += c;
+                                    break;
+                                }
+                            break;
+                            case STATE_SUBLIST_ITEM:
+                                switch (c) {
+                                    case "#":
+                                        state = STATE_HEADER;
+                                        if (tempListItem) {
+                                            headers[tempHeader].push(tempListItem);
+                                        }
+                                        tempHeader = "";
+                                    break;
+                                    case "\n":
+                                        tempListItem = tempListItem.trim()
+
+                                        if (tempListItem) {
+                                            // TODO handle sub items properly. Support infinite levels?
+                                            let _depth = currentSublistDepth - 1;
+                                            let _currentListItem = currentListItem;
+
+                                            while(_depth > 0) {
+                                                if (_currentListItem.subItems.length > 0) {
+                                                    _currentListItem = _currentListItem.subItems[0]
+                                                } else {
+                                                    _currentListItem = undefined;
+                                                }
+
+                                                _depth -= 1;
+                                            }
+
+                                            if (_currentListItem) {
+                                                _currentListItem.subItems.push({ name: tempListItem, subItems: []});
+                                            }
+
+                                        }
+
+                                        state = STATE_LIST_ITEM;
+                                        currentIndentDepth = 0;
+                                        currentSublistDepth = 0;
                                         tempListItem = "";
                                     break;
                                     default:
@@ -121,30 +245,47 @@ background-color:#111;
                             break;
                         }
                     }
-                    
+
                     //
                     //  Display the Parsed List
                     //
-                    
+
+                    const renderSubItems = (subItems, parent) => {
+                        for (const subItem of subItems) {
+                            const subItemElem = document.createElement('li');
+                            subItemElem.innerText = subItem.name;
+                            parent.appendChild(subItemElem);
+
+                            const ulElem = document.createElement('ul');
+                            subItemElem.appendChild(ulElem);
+
+                            renderSubItems(subItem.subItems, ulElem)
+                        }
+                    };
+
                     for (const headerName of Object.keys(headers)) {
                         const headerElem = document.createElement('h3');
                         headerElem.innerText = headerName;
                         outputDiv.appendChild(headerElem);
-                        
+
                         const items = headers[headerName];
-                        
+
+                        const outerUlElem = document.createElement('ul');
+                        outputDiv.appendChild(outerUlElem);
+
                         for (const item of items) {
-                            const itemElem = document.createElement('p');
+                            const itemElem = document.createElement('li');
                             itemElem.innerText = item.name;
-                            outputDiv.appendChild(itemElem);
-                            
-                            for (const subItem of item.subItems) {
-                                const subItemElem = document.createElement('p');
-                                subItemElem.innerText = item.subItems.name;
-                                outputDiv.appendChild(subItem);
-                            }
+                            outerUlElem.appendChild(itemElem);
+
+                            const innerUlElem = document.createElement('ul');
+                            itemElem.appendChild(innerUlElem);
+
+                            renderSubItems(item.subItems, innerUlElem)
                         }
                     }
+
+                    console.log(headers)
                 };
 
                 reader.readAsText(file);
