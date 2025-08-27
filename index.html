@@ -31,6 +31,291 @@ background-color:#111;
 
     </div>
     <script>
+        const renderList = (fileContent, outputDiv) => {
+            outputDiv.innerText = "";
+
+            //
+            //  Parse The List
+            //
+
+            const STATE_INITIAL = 0;
+            const STATE_HEADER = 1;
+            const STATE_LIST_IDENT = 2;
+            const STATE_LIST_ITEM = 3;
+            const STATE_SUBLIST_IDENT = 4;
+            const STATE_SUBLIST_ITEM = 5;
+
+            let state = STATE_INITIAL;
+            let tempHeader = "";
+            let tempListItem = "";
+            let headers = {};
+            let currentListItem = {};
+            let detectedIndentDepth = 0;
+            let currentIndentDepth = 0;
+            let currentSublistDepth = 0;
+
+            const TAB_WIDTH = 4;
+            const SPACE_WIDTH = 1;
+
+            for (const c of fileContent) {
+                switch (state) {
+                    case STATE_INITIAL:
+                        switch (c) {
+                            case "#":
+                                state = STATE_HEADER;
+                                tempHeader = "";
+                            break;
+                            default:
+                                console.log("unhandled:" + c)
+                            break;
+                        }
+                    break;
+                    case STATE_HEADER:
+                        switch (c) {
+                            case "\n":
+                                tempHeader = tempHeader.trim()
+
+                                if (tempHeader) {
+                                    state = STATE_LIST_IDENT;
+                                    // TODO? Bother to handle identical headers?
+                                    headers[tempHeader] = [];
+                                    tempListItem = "";
+                                } else {
+                                    state = STATE_INITIAL;
+                                    tempHeader = "";
+                                    tempListItem = "";
+                                }
+                            break;
+                            default:
+                                tempHeader += c;
+                            break
+                        }
+                    break;
+                    case STATE_LIST_IDENT:
+                        switch (c) {
+                            case "#":
+                                state = STATE_HEADER;
+                                if (tempListItem) {
+                                    headers[tempHeader].push(tempListItem);
+                                }
+                                tempHeader = "";
+                            break;
+                            case "\n":
+                                tempListItem = tempListItem.trim()
+
+                                if (tempListItem) {
+                                    // TODO handle sub items properly. Support infinite levels?
+                                    currentListItem = { name: tempListItem, subItems: []};
+                                    headers[tempHeader].push(currentListItem);
+                                }
+                                currentIndentDepth = 0;
+                                tempListItem = "";
+                            break;
+                            case "\t":
+                                currentIndentDepth += TAB_WIDTH - SPACE_WIDTH;
+                                 // fallthrough
+                            case " ":
+                                currentIndentDepth += SPACE_WIDTH;
+                                state = STATE_SUBLIST_IDENT;
+                            break;
+                            default:
+                                tempListItem += c;
+                                state = STATE_LIST_ITEM;
+                            break;
+                        }
+                    break;
+                    case STATE_LIST_ITEM:
+                        switch (c) {
+                            case "#":
+                                state = STATE_HEADER;
+                                if (tempListItem) {
+                                    headers[tempHeader].push(tempListItem);
+                                }
+                                tempHeader = "";
+                            break;
+                            case "\n":
+                                tempListItem = tempListItem.trim()
+
+                                if (tempListItem) {
+                                    // TODO handle sub items properly. Support infinite levels?
+                                    currentListItem = { name: tempListItem, subItems: []};
+                                    headers[tempHeader].push(currentListItem);
+                                }
+                                currentIndentDepth = 0;
+                                tempListItem = "";
+                                state = STATE_LIST_IDENT;
+                            break;
+                            default:
+                                tempListItem += c;
+                            break;
+                        }
+                    break;
+                    case STATE_SUBLIST_IDENT:
+                        switch (c) {
+                            case "#":
+                                state = STATE_HEADER;
+                                if (tempListItem) {
+                                    headers[tempHeader].push(tempListItem);
+                                }
+                                tempHeader = "";
+                            break;
+                            case "\n":
+                                state = STATE_LIST_ITEM;
+                                currentIndentDepth = 0;
+                                currentSublistDepth = 0;
+                                tempListItem = "";
+                            break;
+                            case "\t":
+                                currentIndentDepth += 3;
+                                 // fallthrough
+                            case " ":
+                                currentIndentDepth += 1;
+                                state = STATE_SUBLIST_IDENT;
+                            break;
+                            default:
+                                // Some word character to start the list item
+                                if (!detectedIndentDepth) {
+                                    detectedIndentDepth = currentIndentDepth;
+                                }
+
+                                currentSublistDepth = Math.floor(currentIndentDepth / detectedIndentDepth)
+
+                                state = STATE_SUBLIST_ITEM;
+                                tempListItem += c;
+                            break;
+                        }
+                    break;
+                    case STATE_SUBLIST_ITEM:
+                        switch (c) {
+                            case "#":
+                                state = STATE_HEADER;
+                                if (tempListItem) {
+                                    headers[tempHeader].push(tempListItem);
+                                }
+                                tempHeader = "";
+                            break;
+                            case "\n":
+                                tempListItem = tempListItem.trim()
+
+                                if (tempListItem) {
+                                    // TODO handle sub items properly. Support infinite levels?
+                                    let _depth = currentSublistDepth - 1;
+                                    let _currentListItem = currentListItem;
+
+                                    while(_depth > 0) {
+                                        if (_currentListItem.subItems.length > 0) {
+                                            _currentListItem = _currentListItem.subItems[0]
+                                        } else {
+                                            _currentListItem = undefined;
+                                        }
+
+                                        _depth -= 1;
+                                    }
+
+                                    if (_currentListItem) {
+                                        _currentListItem.subItems.push({ name: tempListItem, subItems: []});
+                                    }
+
+                                }
+
+                                state = STATE_LIST_IDENT;
+                                currentIndentDepth = 0;
+                                currentSublistDepth = 0;
+                                tempListItem = "";
+                            break;
+                            default:
+                                tempListItem += c;
+                            break;
+                        }
+                    break;
+                }
+            }
+
+            //
+            //  Display the Parsed List
+            //
+
+            //  Display the Stats Above the List
+
+            const statsOutput = document.createElement('output');
+            outputDiv.appendChild(statsOutput);
+
+            const headerKeys = Object.keys(headers);
+
+            let rootCount = 0;
+            let leafCount = 0;
+
+            const countSubItems = (subItems) => {
+                let total = 0;
+
+                for (const subItem of subItems) {
+                    if (subItem.subItems.length === 0) {
+                        total += 1;
+                    } else {
+                        total += countSubItems(subItem.subItems);
+                    }
+                }
+
+                return total;
+            };
+
+            console.log(headers)
+
+            for (const headerName of headerKeys) {
+                const listItems = headers[headerName];
+
+                rootCount += listItems.length;
+
+                if (listItems.length === 0) {
+                    leafCount += 1;
+                } else {
+                    leafCount += countSubItems(listItems);
+                }
+            }
+
+            statsOutput.innerText = `${rootCount} top level item${rootCount === 1 ? "" : "s"}, ${leafCount} items with no sub item${leafCount === 1 ? "" : "s"}`;
+
+            //  Display the List Itself
+
+            const listOutput = document.createElement('output');
+            outputDiv.appendChild(listOutput);
+
+            const renderSubItems = (subItems, parent) => {
+                for (const subItem of subItems) {
+                    const subItemElem = document.createElement('li');
+                    subItemElem.innerText = subItem.name;
+                    parent.appendChild(subItemElem);
+
+                    const ulElem = document.createElement('ul');
+                    subItemElem.appendChild(ulElem);
+
+                    renderSubItems(subItem.subItems, ulElem)
+                }
+            };
+
+            for (const headerName of headerKeys) {
+                const headerElem = document.createElement('h3');
+                headerElem.innerText = headerName;
+                listOutput.appendChild(headerElem);
+
+                const items = headers[headerName];
+
+                const outerUlElem = document.createElement('ul');
+                listOutput.appendChild(outerUlElem);
+
+                for (const item of items) {
+                    const itemElem = document.createElement('li');
+                    itemElem.innerText = item.name;
+                    outerUlElem.appendChild(itemElem);
+
+                    const innerUlElem = document.createElement('ul');
+                    itemElem.appendChild(innerUlElem);
+
+                    renderSubItems(item.subItems, innerUlElem)
+                }
+            }
+        };
+
         const fileForm = document.getElementById("fileForm");
         // We aren't allowed to reload the file automatically without user input
         // apparently, so reset the form to make that clearer.
@@ -49,243 +334,7 @@ background-color:#111;
                     // The content of the file as a text string
                     const fileContent = e.target.result + "\n"; // We add "\n" So we know we'll flush the last item
 
-                    //
-                    //  Parse The List
-                    //
-
-                    const STATE_INITIAL = 0;
-                    const STATE_HEADER = 1;
-                    const STATE_LIST_IDENT = 2;
-                    const STATE_LIST_ITEM = 3;
-                    const STATE_SUBLIST_IDENT = 4;
-                    const STATE_SUBLIST_ITEM = 5;
-
-                    let state = STATE_INITIAL;
-                    let tempHeader = "";
-                    let tempListItem = "";
-                    let headers = {};
-                    let currentListItem = {};
-                    let detectedIndentDepth = 0;
-                    let currentIndentDepth = 0;
-                    let currentSublistDepth = 0;
-
-                    const TAB_WIDTH = 4;
-                    const SPACE_WIDTH = 1;
-
-                    for (const c of fileContent) {
-                        switch (state) {
-                            case STATE_INITIAL:
-                                switch (c) {
-                                    case "#":
-                                        state = STATE_HEADER;
-                                        tempHeader = "";
-                                    break;
-                                    default:
-                                        console.log("unhandled:" + c)
-                                    break;
-                                }
-                            break;
-                            case STATE_HEADER:
-                                switch (c) {
-                                    case "\n":
-                                        tempHeader = tempHeader.trim()
-
-                                        if (tempHeader) {
-                                            state = STATE_LIST_IDENT;
-                                            // TODO? Bother to handle identical headers?
-                                            headers[tempHeader] = [];
-                                            tempListItem = "";
-                                        } else {
-                                            state = STATE_INITIAL;
-                                            tempHeader = "";
-                                            tempListItem = "";
-                                        }
-                                    break;
-                                    default:
-                                        tempHeader += c;
-                                    break
-                                }
-                            break;
-                            case STATE_LIST_IDENT:
-                                switch (c) {
-                                    case "#":
-                                        state = STATE_HEADER;
-                                        if (tempListItem) {
-                                            headers[tempHeader].push(tempListItem);
-                                        }
-                                        tempHeader = "";
-                                    break;
-                                    case "\n":
-                                        tempListItem = tempListItem.trim()
-
-                                        if (tempListItem) {
-                                            // TODO handle sub items properly. Support infinite levels?
-                                            currentListItem = { name: tempListItem, subItems: []};
-                                            headers[tempHeader].push(currentListItem);
-                                        }
-                                        currentIndentDepth = 0;
-                                        tempListItem = "";
-                                    break;
-                                    case "\t":
-                                        currentIndentDepth += TAB_WIDTH - SPACE_WIDTH;
-                                         // fallthrough
-                                    case " ":
-                                        currentIndentDepth += SPACE_WIDTH;
-                                        state = STATE_SUBLIST_IDENT;
-                                    break;
-                                    default:
-                                        tempListItem += c;
-                                        state = STATE_LIST_ITEM;
-                                    break;
-                                }
-                            break;
-                            case STATE_LIST_ITEM:
-                                switch (c) {
-                                    case "#":
-                                        state = STATE_HEADER;
-                                        if (tempListItem) {
-                                            headers[tempHeader].push(tempListItem);
-                                        }
-                                        tempHeader = "";
-                                    break;
-                                    case "\n":
-                                        tempListItem = tempListItem.trim()
-
-                                        if (tempListItem) {
-                                            // TODO handle sub items properly. Support infinite levels?
-                                            currentListItem = { name: tempListItem, subItems: []};
-                                            headers[tempHeader].push(currentListItem);
-                                        }
-                                        currentIndentDepth = 0;
-                                        tempListItem = "";
-                                        state = STATE_LIST_IDENT;
-                                    break;
-                                    default:
-                                        tempListItem += c;
-                                    break;
-                                }
-                            break;
-                            case STATE_SUBLIST_IDENT:
-                                switch (c) {
-                                    case "#":
-                                        state = STATE_HEADER;
-                                        if (tempListItem) {
-                                            headers[tempHeader].push(tempListItem);
-                                        }
-                                        tempHeader = "";
-                                    break;
-                                    case "\n":
-                                        state = STATE_LIST_ITEM;
-                                        currentIndentDepth = 0;
-                                        currentSublistDepth = 0;
-                                        tempListItem = "";
-                                    break;
-                                    case "\t":
-                                        currentIndentDepth += 3;
-                                         // fallthrough
-                                    case " ":
-                                        currentIndentDepth += 1;
-                                        state = STATE_SUBLIST_IDENT;
-                                    break;
-                                    default:
-                                        // Some word character to start the list item
-                                        if (!detectedIndentDepth) {
-                                            detectedIndentDepth = currentIndentDepth;
-                                        }
-
-                                        currentSublistDepth = Math.floor(currentIndentDepth / detectedIndentDepth)
-
-                                        state = STATE_SUBLIST_ITEM;
-                                        tempListItem += c;
-                                    break;
-                                }
-                            break;
-                            case STATE_SUBLIST_ITEM:
-                                switch (c) {
-                                    case "#":
-                                        state = STATE_HEADER;
-                                        if (tempListItem) {
-                                            headers[tempHeader].push(tempListItem);
-                                        }
-                                        tempHeader = "";
-                                    break;
-                                    case "\n":
-                                        tempListItem = tempListItem.trim()
-
-                                        if (tempListItem) {
-                                            // TODO handle sub items properly. Support infinite levels?
-                                            let _depth = currentSublistDepth - 1;
-                                            let _currentListItem = currentListItem;
-
-                                            while(_depth > 0) {
-                                                if (_currentListItem.subItems.length > 0) {
-                                                    _currentListItem = _currentListItem.subItems[0]
-                                                } else {
-                                                    _currentListItem = undefined;
-                                                }
-
-                                                _depth -= 1;
-                                            }
-
-                                            if (_currentListItem) {
-                                                _currentListItem.subItems.push({ name: tempListItem, subItems: []});
-                                            }
-
-                                        }
-
-                                        state = STATE_LIST_ITEM;
-                                        currentIndentDepth = 0;
-                                        currentSublistDepth = 0;
-                                        tempListItem = "";
-                                    break;
-                                    default:
-                                        tempListItem += c;
-                                    break;
-                                }
-                            break;
-                        }
-                    }
-
-                    //
-                    //  Display the Parsed List
-                    //
-
-                    const renderSubItems = (subItems, parent) => {
-                        for (const subItem of subItems) {
-                            const subItemElem = document.createElement('li');
-                            subItemElem.innerText = subItem.name;
-                            parent.appendChild(subItemElem);
-
-                            const ulElem = document.createElement('ul');
-                            subItemElem.appendChild(ulElem);
-
-                            renderSubItems(subItem.subItems, ulElem)
-                        }
-                    };
-
-                    for (const headerName of Object.keys(headers)) {
-                        const headerElem = document.createElement('h3');
-                        headerElem.innerText = headerName;
-                        outputDiv.appendChild(headerElem);
-
-                        const items = headers[headerName];
-
-                        const outerUlElem = document.createElement('ul');
-                        outputDiv.appendChild(outerUlElem);
-
-                        for (const item of items) {
-                            const itemElem = document.createElement('li');
-                            itemElem.innerText = item.name;
-                            outerUlElem.appendChild(itemElem);
-
-                            const innerUlElem = document.createElement('ul');
-                            itemElem.appendChild(innerUlElem);
-
-                            renderSubItems(item.subItems, innerUlElem)
-                        }
-                    }
-
-                    console.log(headers)
+                    renderList(fileContent, outputDiv);
                 };
 
                 reader.readAsText(file);
