@@ -31,9 +31,9 @@ background-color:#111;
 
     </div>
     <script>
-        const renderList = (fileContent, outputDiv) => {
-            outputDiv.innerText = "";
+        let listStates = [];
 
+        const parseList = (fileContent) => {
             //
             //  Parse The List
             //
@@ -231,19 +231,32 @@ background-color:#111;
                 }
             }
 
+            return headers;
+        }
+
+        const renderList = (listStates, i) => {
+            let {
+                headers,
+                statsOutput,
+                listOutput,
+                options: {
+                    renderMerged
+                }
+            } = listStates[i];
+
             //
             //  Display the Parsed List
             //
 
             //  Display the Stats Above the List
 
-            const statsOutput = document.createElement('output');
-            outputDiv.appendChild(statsOutput);
+            statsOutput.innerText = "";
 
             const headerKeys = Object.keys(headers);
 
             let rootCount = 0;
             let leafCount = 0;
+            let mergedCount = 0;
 
             const countSubItems = (subItems) => {
                 let total = 0;
@@ -259,26 +272,27 @@ background-color:#111;
                 return total;
             };
 
-            console.log(headers)
-
             for (const headerName of headerKeys) {
                 const listItems = headers[headerName];
 
                 rootCount += listItems.length;
 
+                mergedCount += 1;
+
                 if (listItems.length === 0) {
                     leafCount += 1;
                 } else {
-                    leafCount += countSubItems(listItems);
+                    const count = countSubItems(listItems);
+                    leafCount += count;
+                    mergedCount += count;
                 }
             }
 
-            statsOutput.innerText = `${rootCount} top level item${rootCount === 1 ? "" : "s"}, ${leafCount} items with no sub item${leafCount === 1 ? "" : "s"}`;
+            statsOutput.innerText = `${rootCount} top level item${rootCount === 1 ? "" : "s"}, ${leafCount} items with no sub item${leafCount === 1 ? "" : "s"}, ${mergedCount} item${leafCount === 1 ? "" : "s"} when merged`;
 
             //  Display the List Itself
 
-            const listOutput = document.createElement('output');
-            outputDiv.appendChild(listOutput);
+            listOutput.innerText = "";
 
             const renderSubItems = (subItems, parent) => {
                 for (const subItem of subItems) {
@@ -293,6 +307,20 @@ background-color:#111;
                 }
             };
 
+            const renderSubItemsMerged = (subItems, parent, parentName) => {
+                for (const subItem of subItems) {
+                    const name = parentName + " " + subItem.name;
+
+                    if (subItem.subItems.length > 0) {
+                        renderSubItemsMerged(subItem.subItems, parent, name)
+                    } else {
+                        const subItemElem = document.createElement('li');
+                        subItemElem.innerText = name;
+                        parent.appendChild(subItemElem);
+                    }
+                }
+            };
+
             for (const headerName of headerKeys) {
                 const headerElem = document.createElement('h3');
                 headerElem.innerText = headerName;
@@ -304,14 +332,24 @@ background-color:#111;
                 listOutput.appendChild(outerUlElem);
 
                 for (const item of items) {
-                    const itemElem = document.createElement('li');
-                    itemElem.innerText = item.name;
-                    outerUlElem.appendChild(itemElem);
+                    if (renderMerged) {
+                        const itemElem = document.createElement('li');
+                        itemElem.innerText = item.name;
+                        outerUlElem.appendChild(itemElem);
 
-                    const innerUlElem = document.createElement('ul');
-                    itemElem.appendChild(innerUlElem);
+                        if (item.subItems.length > 0) {
+                            renderSubItemsMerged(item.subItems, outerUlElem, item.name);
+                        }
+                    } else {
+                        const itemElem = document.createElement('li');
+                        itemElem.innerText = item.name;
+                        outerUlElem.appendChild(itemElem);
 
-                    renderSubItems(item.subItems, innerUlElem)
+                        const innerUlElem = document.createElement('ul');
+                        itemElem.appendChild(innerUlElem);
+
+                        renderSubItems(item.subItems, innerUlElem)
+                    }
                 }
             }
         };
@@ -325,6 +363,9 @@ background-color:#111;
         const outputDiv = document.getElementById("outputDiv");
 
         fileInput.addEventListener("change", () => {
+            listStates = [];
+            outputDiv.innerText = "";
+
             for (let i = 0; i < fileInput.files.length; i += 1) {
                 const file = fileInput.files[i];
 
@@ -334,7 +375,47 @@ background-color:#111;
                     // The content of the file as a text string
                     const fileContent = e.target.result + "\n"; // We add "\n" So we know we'll flush the last item
 
-                    renderList(fileContent, outputDiv);
+                    const headers = parseList(fileContent);
+
+                    const optionsForm = document.createElement('form');
+                    outputDiv.appendChild(optionsForm);
+
+                    const statsOutput = document.createElement('output');
+                    outputDiv.appendChild(statsOutput);
+
+                    const listOutput = document.createElement('output');
+                    outputDiv.appendChild(listOutput);
+
+                    //
+                    // Render the options form
+                    //
+
+                    const renderMergedCheckbox = document.createElement('input');
+                    renderMergedCheckbox.type = "checkbox";
+                    renderMergedCheckbox.id = "render-merged-" + i;
+                    optionsForm.appendChild(renderMergedCheckbox);
+                    renderMergedCheckbox.addEventListener("change", () => {
+                        listStates[i].options.renderMerged = renderMergedCheckbox.checked;
+
+                        renderList(listStates, i);
+                    });
+
+
+                    const renderMergedLabel = document.createElement('label');
+                    renderMergedLabel.htmlFor = renderMergedCheckbox.id;
+                    renderMergedLabel.textContent = "Render nested entries as merged";
+                    optionsForm.appendChild(renderMergedLabel);
+
+                    listStates.push({
+                        headers,
+                        statsOutput,
+                        listOutput,
+                        options: {
+                            renderMerged: renderMergedCheckbox.checked,
+                        }
+                    });
+
+                    renderList(listStates, i);
                 };
 
                 reader.readAsText(file);
