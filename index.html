@@ -198,13 +198,12 @@ background-color:#111;
                                 tempListItem = tempListItem.trim()
 
                                 if (tempListItem) {
-                                    // TODO handle sub items properly. Support infinite levels?
                                     let _depth = currentSublistDepth - 1;
                                     let _currentListItem = currentListItem;
 
                                     while(_depth > 0) {
                                         if (_currentListItem.subItems.length > 0) {
-                                            _currentListItem = _currentListItem.subItems[0]
+                                            _currentListItem = _currentListItem.subItems[_currentListItem.subItems.length - 1]
                                         } else {
                                             _currentListItem = undefined;
                                         }
@@ -240,7 +239,8 @@ background-color:#111;
                 statsOutput,
                 listOutput,
                 options: {
-                    renderMerged
+                    renderMerged,
+                    renderCartesianProduct
                 }
             } = listStates[i];
 
@@ -257,6 +257,7 @@ background-color:#111;
             let rootCount = 0;
             let leafCount = 0;
             let mergedCount = 0;
+            let mergedCartesianProductCount = 0;
 
             const countSubItems = (subItems) => {
                 let total = 0;
@@ -272,12 +273,21 @@ background-color:#111;
                 return total;
             };
 
+            const countSubItemsCartesianProduct = (subItems) => {
+                let total = 0;
+                
+                // TODO
+
+                return total;
+            };
+
             for (const headerName of headerKeys) {
                 const listItems = headers[headerName];
 
                 rootCount += listItems.length;
 
                 mergedCount += 1;
+                mergedCartesianProductCount += 1;
 
                 if (listItems.length === 0) {
                     leafCount += 1;
@@ -285,10 +295,13 @@ background-color:#111;
                     const count = countSubItems(listItems);
                     leafCount += count;
                     mergedCount += count;
+
+                    const cartesianProductcount = countSubItemsCartesianProduct(listItems);
+                    mergedCartesianProductCount += cartesianProductcount;
                 }
             }
 
-            statsOutput.innerText = `${rootCount} top level item${rootCount === 1 ? "" : "s"}, ${leafCount} items with no sub item${leafCount === 1 ? "" : "s"}, ${mergedCount} item${leafCount === 1 ? "" : "s"} when merged`;
+            statsOutput.innerText = `${rootCount} top level item${rootCount === 1 ? "" : "s"}, ${leafCount} items with no sub item${leafCount === 1 ? "" : "s"}, ${mergedCount} item${mergedCount === 1 ? "" : "s"} when merged,`;// ${mergedCartesianProductCount} item${mergedCartesianProductCount === 1 ? "" : "s"} when merged with cartesian product`;
 
             //  Display the List Itself
 
@@ -321,6 +334,44 @@ background-color:#111;
                 }
             };
 
+            const renderSubItemsCartesianProduct = (subItems, parent, parentName) => {
+                // 32 levels will probably be enough for a while
+                if (subItems.length > 31) {
+                    const subItemElem = document.createElement('li');
+                    subItemElem.innerText = "ERROR, Too many items: " + subItems.length;
+                    parent.appendChild(subItemElem);
+                    return
+                }
+
+                let fullMask = (1 << subItems.length) - 1;
+
+                let currentMask = 1;
+
+                while (currentMask <= fullMask) {
+                    let name = parentName;
+
+                    let mask = currentMask;
+                    let index = 0;
+
+                    while (mask > 0) {
+                        if (mask & 1) {
+                            name += " ";
+                            name += subItems[index].name;
+                        }
+
+                        index += 1;
+                        mask >>= 1;
+                    }
+
+                    // TODO support nesting properly
+                    const subItemElem = document.createElement('li');
+                    subItemElem.innerText = name;
+                    parent.appendChild(subItemElem);
+
+                    currentMask += 1;
+                }
+            };
+
             for (const headerName of headerKeys) {
                 const headerElem = document.createElement('h3');
                 headerElem.innerText = headerName;
@@ -338,7 +389,11 @@ background-color:#111;
                         outerUlElem.appendChild(itemElem);
 
                         if (item.subItems.length > 0) {
-                            renderSubItemsMerged(item.subItems, outerUlElem, item.name);
+                            if (renderCartesianProduct) {
+                                renderSubItemsCartesianProduct(item.subItems, outerUlElem, item.name);
+                            } else {
+                                renderSubItemsMerged(item.subItems, outerUlElem, item.name);
+                            }
                         }
                     } else {
                         const itemElem = document.createElement('li');
@@ -394,17 +449,33 @@ background-color:#111;
                     renderMergedCheckbox.type = "checkbox";
                     renderMergedCheckbox.id = "render-merged-" + i;
                     optionsForm.appendChild(renderMergedCheckbox);
-                    renderMergedCheckbox.addEventListener("change", () => {
-                        listStates[i].options.renderMerged = renderMergedCheckbox.checked;
-
-                        renderList(listStates, i);
-                    });
-
 
                     const renderMergedLabel = document.createElement('label');
                     renderMergedLabel.htmlFor = renderMergedCheckbox.id;
                     renderMergedLabel.textContent = "Render nested entries as merged";
                     optionsForm.appendChild(renderMergedLabel);
+
+                    renderCartesianProductCheckbox = document.createElement('input');
+                    renderCartesianProductCheckbox.type = "checkbox";
+                    renderCartesianProductCheckbox.id = "render-cartesian-product-" + i;
+                    optionsForm.appendChild(renderCartesianProductCheckbox);
+
+
+                    const updateForm = () => {
+                        listStates[i].options.renderMerged = renderMergedCheckbox.checked;
+                        listStates[i].options.renderCartesianProduct = renderCartesianProductCheckbox.checked;
+                        renderCartesianProductCheckbox.disabled = !renderMergedCheckbox.checked;
+
+                        renderList(listStates, i);
+                    };
+                    renderMergedCheckbox.addEventListener("change", updateForm);
+                    renderCartesianProductCheckbox.addEventListener("change", updateForm);
+
+
+                    const renderCartesianProductLabel = document.createElement('label');
+                    renderCartesianProductLabel.htmlFor = renderCartesianProductCheckbox.id;
+                    renderCartesianProductLabel.textContent = "Merge all combinations";
+                    optionsForm.appendChild(renderCartesianProductLabel);
 
                     listStates.push({
                         headers,
@@ -412,10 +483,11 @@ background-color:#111;
                         listOutput,
                         options: {
                             renderMerged: renderMergedCheckbox.checked,
+                            renderCartesianProduct: renderCartesianProductCheckbox
                         }
                     });
 
-                    renderList(listStates, i);
+                    updateForm();
                 };
 
                 reader.readAsText(file);
