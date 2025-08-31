@@ -273,10 +273,77 @@ background-color:#111;
                 return total;
             };
 
+            const getAllSubsetNames = (subItems) => {
+                // 32 levels will probably be enough for a while, and even that many is probablt too many
+                if (subItems.length > 31) {
+                    return [ "ERROR, Too many items: " + subItems.length ];
+                } else if (subItems.length === 0) {
+                    return [];
+                }
+
+                let output = [];
+
+                let fullMask = (1 << subItems.length) - 1;
+
+                let currentMask = 1;
+
+                while (currentMask <= fullMask) {
+                    let subItemSubSet = [];
+
+                    let mask = currentMask;
+                    let index = 0;
+                    while (mask > 0) {
+                        if (mask & 1) {
+                            subItemSubSet.push(subItems[index]);
+                        }
+
+                        index += 1;
+                        mask >>= 1;
+                    }
+
+                    let nestedNames = [];
+
+                    let baseName = "";
+                    let sep = "";
+                    for (subItem of subItemSubSet) {
+                        baseName += sep;
+                        baseName += subItem.name;
+                        sep = " ";
+                    }
+                    nestedNames.push(baseName);
+
+                    for (subItem of subItemSubSet) {
+                        const subsetNames = getAllSubsetNames(subItem.subItems);
+                        const len = nestedNames.length;
+
+                        for (let i = 0; i < len; i += 1) {
+                            for (subsetName of subsetNames) {
+                                nestedNames.push(nestedNames[i] + " " + subsetName)
+                            }
+                        }
+                    }
+
+                    output = output.concat(nestedNames);
+
+                    currentMask += 1;
+                }
+
+                return output
+            }
+
             const countSubItemsCartesianProduct = (subItems) => {
                 let total = 0;
-                
-                // TODO
+
+                for (const item of subItems) {
+                    if (item.subItems.length > 0) {
+                        const childNames = getAllSubsetNames(item.subItems);
+
+                        // TODO figure out why we are getting redundant names, if we still are
+                        total += new Set(childNames).size;
+                    } else {
+                        total += 1;
+                    }
+                }
 
                 return total;
             };
@@ -301,7 +368,7 @@ background-color:#111;
                 }
             }
 
-            statsOutput.innerText = `${rootCount} top level item${rootCount === 1 ? "" : "s"}, ${leafCount} items with no sub item${leafCount === 1 ? "" : "s"}, ${mergedCount} item${mergedCount === 1 ? "" : "s"} when merged,`;// ${mergedCartesianProductCount} item${mergedCartesianProductCount === 1 ? "" : "s"} when merged with cartesian product`;
+            statsOutput.innerText = `${rootCount} top level item${rootCount === 1 ? "" : "s"}, ${leafCount} items with no sub item${leafCount === 1 ? "" : "s"}, ${mergedCount} item${mergedCount === 1 ? "" : "s"} when merged, ${mergedCartesianProductCount} item${mergedCartesianProductCount === 1 ? "" : "s"} when merged with cartesian product`;
 
             //  Display the List Itself
 
@@ -335,42 +402,15 @@ background-color:#111;
             };
 
             const renderSubItemsCartesianProduct = (subItems, parent, parentName) => {
-                // 32 levels will probably be enough for a while
-                if (subItems.length > 31) {
+                const childNames = getAllSubsetNames(subItems);
+
+                // TODO figure out why we are getting redundant names
+                for (childName of new Set(childNames)) {
                     const subItemElem = document.createElement('li');
-                    subItemElem.innerText = "ERROR, Too many items: " + subItems.length;
+                    subItemElem.innerText = parentName + " " + childName;
                     parent.appendChild(subItemElem);
-                    return
                 }
-
-                let fullMask = (1 << subItems.length) - 1;
-
-                let currentMask = 1;
-
-                while (currentMask <= fullMask) {
-                    let name = parentName;
-
-                    let mask = currentMask;
-                    let index = 0;
-
-                    while (mask > 0) {
-                        if (mask & 1) {
-                            name += " ";
-                            name += subItems[index].name;
-                        }
-
-                        index += 1;
-                        mask >>= 1;
-                    }
-
-                    // TODO support nesting properly
-                    const subItemElem = document.createElement('li');
-                    subItemElem.innerText = name;
-                    parent.appendChild(subItemElem);
-
-                    currentMask += 1;
-                }
-            };
+            }
 
             for (const headerName of headerKeys) {
                 const headerElem = document.createElement('h3');
